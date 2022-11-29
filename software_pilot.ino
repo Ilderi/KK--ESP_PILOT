@@ -72,13 +72,13 @@ uint32_t findPressedButton()
       {
         // col 1 row 3 = button3, col 1 row 3 = button 6 
         uint8_t buttonID = (col+1) * (row+1);
-        lastPressedButton = buttonID;
+        return (uint32_t)buttonID;
       }
     }
     digitalWrite(col_Pins[col], HIGH);
   }
 
-  return FOO_OK;
+  return FOO_ERROR;
 }
 
 uint32_t initializePins()

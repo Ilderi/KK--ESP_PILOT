@@ -3,6 +3,8 @@
 #include "ESP.h"
 #include "user_interface.h" // include required for LIGHT_SLEEP_T, among others
 
+#define DEBUG 0
+
 #define MESH_PREFIX "LOCAL_MESH"
 #define MESH_PASSWORD "LOCALMESHMOTHERFUCKER"
 #define MESH_PORT 2137
@@ -14,12 +16,12 @@
 //pins definitons - TODO, dodać piny
 #define PIN_ROW1 0 //GPIO0
 #define PIN_ROW2 2 //GOIO2
-#define PIN_ROW3 5 //GPIO5
-#define PIN_ROW4 4 //GPIO4
+#define PIN_ROW3 4 //GPIO4
+#define PIN_ROW4 5 //GPIO5
 #define PIN_ROW5 13 //GPIO13
 #define PIN_COL1 15 //GPIO15
 #define PIN_COL2 12 //GPIO12
-#define PIN_LED 4 //GPIO14
+#define PIN_LED 14 //GPIO14
 
 //util definitions
 #define FOO_OK 1
@@ -35,6 +37,7 @@ static const uint8_t col_Pins[] = {PIN_COL1, PIN_COL2};
 
 uint32_t initializePins();
 void pilotEnterLightSleep();
+uint32_t findPressedButton();
 
 void setup() {
   // enable light sleep
@@ -46,17 +49,105 @@ void setup() {
   Serial.println("I`m alive");
   
   Serial.println("I`m alive");
-  pilotEnterLightSleep();
+  //pilotEnterLightSleep();
   //mesh.setDebugMsgTypes(ERROR | STARTUP);
   //mesh.init(MESH_PREFIX, MESH_PASSWORD, &userScheduler, MESH_PORT);
 
 }
 
 void loop() {
-  Serial.println("I`m alive again!");
-  delay(500);
-  // put your main code here, to run repeatedly:
+  findPressedButton();
+}
 
+uint32_t findPressedButton()
+{
+
+  for(uint8_t i = 0; i < COL_COUNT; i++)
+  {
+    pinMode(col_Pins[i], OUTPUT);
+    digitalWrite(col_Pins[i], HIGH);
+    digitalWrite(PIN_LED, LOW);
+  }
+  
+  //loop trhought collumns and rows to find first key pressed, then return it`s ID(number)
+  for(uint8_t col = 0; col < COL_COUNT; col++)
+  {
+    digitalWrite(col_Pins[col], LOW);
+    delay(10);
+    for(uint8_t row = 0; row < ROW_COUNT; row++)
+    {
+      /*
+      Serial.print("Col: ");
+      Serial.print(col);
+      Serial.print("  Row: ");
+      Serial.println(row);
+      */
+      if(digitalRead(row_Pins[row]) == LOW)
+      {
+        // col 1 row 3 = button3, col 1 row 3 = button 6 
+        pinMode(col_Pins[col], INPUT_PULLUP);
+        digitalWrite(PIN_LED, HIGH);
+        uint8_t buttonID = (col*5) + (row+1);
+        #ifdef DEBUG
+          Serial.print("Pressed Button ID: ");
+          Serial.println(buttonID);
+/*
+          for(uint8_t row = 0; row < ROW_COUNT; row++)
+          {
+            uint8_t value = 0;
+            Serial.print("Row");
+            Serial.print(row);
+            Serial.print(" State:");
+            switch(digitalRead(row_Pins[row]))
+            {
+              case 0:
+                value = 0;
+                break;
+              case 1:
+                value = 1;
+                break;
+              default:
+                break;
+            }
+            Serial.println(value);
+          }
+          */
+        #endif
+        return (uint32_t)buttonID;
+      }
+      else
+      {
+        #ifdef DEBUG
+
+        //Serial.println("Nothing found\n");
+        /*
+          for(uint8_t row = 0; row < ROW_COUNT; row++)
+          {
+            uint8_t value = 0;
+            Serial.print("Row");
+            Serial.print(row);
+            Serial.print(" State:");
+            switch(digitalRead(row_Pins[row]))
+            {
+              case 0:
+                value = 0;
+                break;
+              case 1:
+                value = 1;
+                break;
+              default:
+                break;
+            }
+            Serial.println(value);
+          }
+          */
+        #endif
+      }
+    }
+    digitalWrite(col_Pins[col], HIGH);
+  }
+
+  return FOO_ERROR;
 }
 
 void pilotEnterLightSleep()
@@ -92,8 +183,5 @@ uint32_t initializePins()
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, LOW);
 
-  pinMode(4, OUTPUT);
-  digitalWrite(4, HIGH);
-  
   return FOO_OK;
 }
