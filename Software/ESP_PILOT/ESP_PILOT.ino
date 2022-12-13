@@ -3,7 +3,8 @@
 #include "ESP.h"
 #include "user_interface.h"  // include required for LIGHT_SLEEP_T, among others
 #include "string.h"
-#include "painlessMesh.h"
+#include "espnow.h"
+#include <ESP8266WiFi.h>
 
 //#define RELEASE
 
@@ -39,8 +40,6 @@
 //structures
 
 //file scope variables
-painlessMesh mesh;
-Scheduler userScheduler;
 static const uint8_t row_Pins[] = { PIN_ROW1, PIN_ROW2, PIN_ROW3, PIN_ROW4, PIN_ROW5 };
 static const uint8_t col_Pins[] = { PIN_COL1, PIN_COL2 };
 static uint8_t lastPressedButton;
@@ -57,6 +56,9 @@ void setup() {
   wifi_fpm_set_sleep_type(LIGHT_SLEEP_T);
   wifi_fpm_open();
   Serial.begin(USB_BAUDRATE);
+  Serial.println(WiFi.macAddress());
+  Serial.println(WiFi.macAddress());
+  //WiFi.mode(WIFI_STA);
   initializePins();
   Serial.println();
   Serial.println("I`m alive");
@@ -170,6 +172,7 @@ uint8_t findPressedButton() {
 }
 
 void pilotEnterLightSleep() {
+  noInterrupts();
   Serial.flush();  //flushing any outcoming serial data before CPU halts
   // actually enter light sleep:
   // the special timeout value of 0xFFFFFFF triggers indefinite
@@ -177,7 +180,9 @@ void pilotEnterLightSleep() {
   wifi_fpm_do_sleep(0xFFFFFFF);
   // the CPU will only enter light sleep on the next idle cycle, which
   // can be triggered by a short delay()
+  interrupts();
   delay(DEBOUNCE_MSDELAY);
+  
 }
 
 uint32_t initializePins() {
