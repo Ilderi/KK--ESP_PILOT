@@ -1,7 +1,6 @@
 //#include "painlessMesh.h"
 #include "Arduino.h"
-#include "ESP.h"
-#include "user_interface.h"  // include required for LIGHT_SLEEP_T, among others
+#include "user_interface.h"
 #include "string.h"
 #include "espnow.h"
 #include <ESP8266WiFi.h>
@@ -11,10 +10,6 @@
 #ifndef RELEASE
 #define DEBUG
 #endif
-
-#define MESH_PREFIX "LOCAL_MESH"
-#define MESH_PASSWORD "LOCALMESHMOTHERFUCKER"
-#define MESH_PORT 2137
 
 //variable definitions
 #define USB_BAUDRATE 115200
@@ -38,34 +33,44 @@
 
 
 //structures
+typedef struct struct_message {
+  uint8_t cmd;
+  uint8_t data;
+} struct_meessage;
 
 //file scope variables
 static const uint8_t row_Pins[] = { PIN_ROW1, PIN_ROW2, PIN_ROW3, PIN_ROW4, PIN_ROW5 };
 static const uint8_t col_Pins[] = { PIN_COL1, PIN_COL2 };
 static uint8_t lastPressedButton;
 static uint8_t pressedButtonID;
+static uint8_t broadcastAddress[] = { 0x84, 0xF3, 0xEB, 0xE4, 0x59, 0x8E };
+static struct_message myData;
+//84:F3:EB:E4:59:8E
 
 //function prototypes
 uint32_t initializePins();
 void pilotEnterLightSleep();
 uint8_t findPressedButton();
-uint8_t sendMessage(uint8_t);
+uint8_t sendMessage(uint8_t, uint8_t);
+void sendAction(uint8_t, uint8_t);
 
 void setup() {
   // enable light sleep
   wifi_fpm_set_sleep_type(LIGHT_SLEEP_T);
   wifi_fpm_open();
   Serial.begin(USB_BAUDRATE);
-  Serial.println(WiFi.macAddress());
-  Serial.println(WiFi.macAddress());
-  //WiFi.mode(WIFI_STA);
+  WiFi.mode(WIFI_STA);
+  if (esp_now_init() != 0) {
+    Serial.println("Error initializing ESP-NOW");
+  }
+  esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
+  esp_now_register_send_cb(OnDataSent);
+  esp_now_add_peer(broadcastAddress, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
   initializePins();
   Serial.println();
   Serial.println("I`m alive");
   Serial.println("I`m alive");
   Serial.println("I`m alive");
-  //mesh.setDebugMsgTypes( ERROR | STARTUP | CONNECTION );
-  //mesh.init(MESH_PREFIX, MESH_PASSWORD, MESH_PORT);
 #ifdef RELEASE
   Serial.end();
 #endif
@@ -83,12 +88,14 @@ void loop() {
   }
 
   delay(DEBOUNCE_MSDELAY);
-  digitalWrite(PIN_LED, LOW);
   pressedButtonID = findPressedButton();
   if ((lastPressedButton == pressedButtonID) && (pressedButtonID != 0)) {
-    sendMessage(pressedButtonID);
-    while (findPressedButton() != 0)  //wait for button to be released
-      ;
+    while (findPressedButton() != 0) {  //wait for button to be released
+      sendMessage(1, pressedButtonID);
+      delay(200);
+    }
+    sendMessage(2, pressedButtonID);
+    digitalWrite(PIN_LED, LOW);
   }
 #ifdef DEBUG
   Serial.println("Entering Sleep");
@@ -96,38 +103,59 @@ void loop() {
   pilotEnterLightSleep();
 }
 
-uint8_t sendMessage(uint8_t buttonID) {
-  String message = "Pressed Button ID: ";
+// Callback when data is sent
+void OnDataSent(uint8_t *mac_addr, uint8_t sendStatus) {
+  Serial.print("Last Packet Send Status: ");
+  if (sendStatus == 0) {
+    Serial.println("Delivery success");
+  } else {
+    Serial.println("Delivery fail");
+  }
+}
+
+void sendAction(uint8_t action_type, uint8_t action_data) {
+  myData.cmd = action_type;
+  myData.data = action_data;
+  esp_now_send(broadcastAddress, (uint8_t *)&myData, sizeof(myData));
+}
+
+uint8_t sendMessage(uint8_t message_type, uint8_t buttonID) {
+  uint8_t message_data = 0;
   switch (buttonID) {
     case 1:
-      message += buttonID;
+      message_data = 1;
       break;
     case 2:
-      message += buttonID;
+      message_data = 2;
       break;
     case 3:
-      message += buttonID;
+      message_data = 3;
       break;
     case 4:
-      message += buttonID;
+      message_data = 4;
       break;
     case 5:
-      message += buttonID;
+      message_data = 5;
       break;
     case 6:
-      message += buttonID;
+      message_data = 1;
+      message_type +=2;
       break;
     case 7:
-      message += buttonID;
+      message_data = 2;
+      message_type +=2;
       break;
     case 8:
-      message += buttonID;
+      message_data = 3;
+      message_type +=2;
       break;
     case 9:
-      message += buttonID;
+      message_data = 4;
+      message_type +=2;
       break;
     case 10:
-      message += buttonID;
+      message_data = 5;
+      message_type +=2;
       break;
     default:
 #ifdef DEBUG
@@ -137,8 +165,11 @@ uint8_t sendMessage(uint8_t buttonID) {
       break;
   }
 #ifdef DEBUG
-  Serial.println(message);
 #endif
+  if ((message_type != 0) && (message_data != 0)) {
+    sendAction(message_type, message_data);
+  }
+
   return FOO_OK;
 }
 
@@ -172,7 +203,6 @@ uint8_t findPressedButton() {
 }
 
 void pilotEnterLightSleep() {
-  noInterrupts();
   Serial.flush();  //flushing any outcoming serial data before CPU halts
   // actually enter light sleep:
   // the special timeout value of 0xFFFFFFF triggers indefinite
@@ -180,9 +210,7 @@ void pilotEnterLightSleep() {
   wifi_fpm_do_sleep(0xFFFFFFF);
   // the CPU will only enter light sleep on the next idle cycle, which
   // can be triggered by a short delay()
-  interrupts();
   delay(DEBOUNCE_MSDELAY);
-  
 }
 
 uint32_t initializePins() {
