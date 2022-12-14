@@ -1,6 +1,6 @@
-//#include "painlessMesh.h"
-#include "Arduino.h"
-#include "user_interface.h"
+
+//#include "Arduino.h"
+//#include "user_interface.h"
 #include "string.h"
 #include "espnow.h"
 #include <ESP8266WiFi.h>
@@ -49,15 +49,16 @@ static struct_message myData;
 
 //function prototypes
 uint32_t initializePins();
-void pilotEnterLightSleep();
+void pilotEnterLightSleep(void);
 uint8_t findPressedButton();
 uint8_t sendMessage(uint8_t, uint8_t);
 void sendAction(uint8_t, uint8_t);
+void hw_wdt_enable(void);
+void hw_wdt_disable(void);
 
 void setup() {
   // enable light sleep
-  wifi_fpm_set_sleep_type(LIGHT_SLEEP_T);
-  wifi_fpm_open();
+
   Serial.begin(USB_BAUDRATE);
   WiFi.mode(WIFI_STA);
   if (esp_now_init() != 0) {
@@ -66,6 +67,9 @@ void setup() {
   esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
   esp_now_register_send_cb(OnDataSent);
   esp_now_add_peer(broadcastAddress, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+
+  wifi_fpm_set_sleep_type(LIGHT_SLEEP_T);
+  wifi_fpm_open();
   initializePins();
   Serial.println();
   Serial.println("I`m alive");
@@ -78,10 +82,6 @@ void setup() {
 }
 
 void loop() {
-#ifdef DEBUG
-  Serial.println("Waking Up");
-#endif
-
   lastPressedButton = findPressedButton();
   if (lastPressedButton != 0) {
     digitalWrite(PIN_LED, HIGH);
@@ -92,15 +92,22 @@ void loop() {
   if ((lastPressedButton == pressedButtonID) && (pressedButtonID != 0)) {
     while (findPressedButton() != 0) {  //wait for button to be released
       sendMessage(1, pressedButtonID);
-      delay(200);
+      delay(20);
     }
+    Serial.println("im out");
     sendMessage(2, pressedButtonID);
-    digitalWrite(PIN_LED, LOW);
+    delay(DEBOUNCE_MSDELAY);
   }
-#ifdef DEBUG
-  Serial.println("Entering Sleep");
-#endif
+  digitalWrite(PIN_LED, LOW);
   pilotEnterLightSleep();
+}
+
+void hw_wdt_disable(void) {
+  *((volatile uint32_t *)0x60000900) &= ~(1);  // Hardware WDT OFF
+}
+
+void hw_wdt_enable(void) {
+  *((volatile uint32_t *)0x60000900) |= 1;  // Hardware WDT ON
 }
 
 // Callback when data is sent
@@ -139,23 +146,23 @@ uint8_t sendMessage(uint8_t message_type, uint8_t buttonID) {
       break;
     case 6:
       message_data = 1;
-      message_type +=2;
+      message_type += 2;
       break;
     case 7:
       message_data = 2;
-      message_type +=2;
+      message_type += 2;
       break;
     case 8:
       message_data = 3;
-      message_type +=2;
+      message_type += 2;
       break;
     case 9:
       message_data = 4;
-      message_type +=2;
+      message_type += 2;
       break;
     case 10:
       message_data = 5;
-      message_type +=2;
+      message_type += 2;
       break;
     default:
 #ifdef DEBUG
@@ -202,15 +209,40 @@ uint8_t findPressedButton() {
   return buttonID;
 }
 
-void pilotEnterLightSleep() {
+void pilotEnterLightSleep(void) {
+  WiFi.mode(WIFI_OFF);
+  ESP.wdtFeed();
+  delay(1);
+  esp_now_deinit();
+  
+  //ESP.wdtDisable();  // Software WDT OFF
+  yield();
+  //hw_wdt_disable();
+  yield();
   Serial.flush();  //flushing any outcoming serial data before CPU halts
-  // actually enter light sleep:
-  // the special timeout value of 0xFFFFFFF triggers indefinite
-  // light sleep (until any of the GPIO interrupts above is triggered)
+// actually enter light sleep:
+// the special timeout value of 0xFFFFFFF triggers indefinite
+// light sleep (until any of the GPIO interrupts above is triggered)
+#ifdef DEBUG
+  Serial.println("Entering Sleep");
+#endif
   wifi_fpm_do_sleep(0xFFFFFFF);
   // the CPU will only enter light sleep on the next idle cycle, which
   // can be triggered by a short delay()
-  delay(DEBOUNCE_MSDELAY);
+  delay(1);
+#ifdef DEBUG
+  Serial.println("Waking Up");
+#endif
+  //hw_wdt_enable();
+  WiFi.mode(WIFI_STA);
+  wifi_fpm_set_sleep_type(LIGHT_SLEEP_T);
+  wifi_fpm_open();
+  if (esp_now_init() != 0) {
+    Serial.println("Error initializing ESP-NOW");
+  }
+  esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
+  esp_now_register_send_cb(OnDataSent);
+  esp_now_add_peer(broadcastAddress, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
 }
 
 uint32_t initializePins() {
