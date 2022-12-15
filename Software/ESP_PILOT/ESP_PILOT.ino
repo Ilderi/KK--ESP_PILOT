@@ -4,6 +4,7 @@
 #include "string.h"
 #include "espnow.h"
 #include <ESP8266WiFi.h>
+#include <EEPROM.h>
 
 //#define RELEASE
 
@@ -19,6 +20,7 @@
 #define ROW_COUNT 5
 #define COL_COUNT 2
 #define BUTTON_COUNT 10
+#define EEPROM_SIZE 12
 
 //pins definitons - TODO, dodać piny
 #define PIN_ROW1 0   //GPIO0
@@ -56,10 +58,21 @@ void sendAction(uint8_t, uint8_t);
 void hw_wdt_enable(void);
 void hw_wdt_disable(void);
 
+// Callback when data is sent
+void OnDataSent(uint8_t *mac_addr, uint8_t sendStatus) {
+  Serial.print("Last Packet Send Status: ");
+  if (sendStatus == 0) {
+    Serial.println("Delivery success");
+  } else {
+    Serial.println("Delivery fail");
+  }
+}
+
 void setup() {
   // enable light sleep
-
+  initializePins();
   Serial.begin(USB_BAUDRATE);
+  EEPROM.begin(EEPROM_SIZE);
   WiFi.mode(WIFI_STA);
   if (esp_now_init() != 0) {
     Serial.println("Error initializing ESP-NOW");
@@ -67,10 +80,49 @@ void setup() {
   esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
   esp_now_register_send_cb(OnDataSent);
   esp_now_add_peer(broadcastAddress, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+  delay(50);
+
+  uint8_t eeprom_val = 0;
+  EEPROM.get(0, eeprom_val);
+  if (eeprom_val != 0)  //jeżeli pilot był wyłączony
+  {
+    myData.cmd = 5;
+    myData.data = 5;
+    if (esp_now_send(broadcastAddress, (uint8_t *)&myData, sizeof(myData)) == 0) {
+      uint8_t eeprom_val = 0;
+      EEPROM.get(0, eeprom_val);
+      if (eeprom_val != 0) {
+        for (uint8_t led_blink_ct; led_blink_ct < 4; led_blink_ct++) {
+          digitalWrite(PIN_LED, HIGH);
+          delay(100);
+          digitalWrite(PIN_LED, LOW);
+          delay(100);
+          EEPROM.put(0, 0);
+          EEPROM.commit();
+          EEPROM.end();
+        }
+      }
+    }
+  } else {
+    myData.cmd = 6;
+    myData.data = 6;
+    if (esp_now_send(broadcastAddress, (uint8_t *)&myData, sizeof(myData)) == 0) {
+      for (uint8_t led_blink_ct; led_blink_ct < 6; led_blink_ct++) {
+        digitalWrite(PIN_LED, HIGH);
+        delay(50);
+        digitalWrite(PIN_LED, LOW);
+        delay(50);
+        EEPROM.put(0, 1);
+        EEPROM.commit();
+        EEPROM.end();
+      }
+    }
+  }
+
 
   wifi_fpm_set_sleep_type(LIGHT_SLEEP_T);
   wifi_fpm_open();
-  initializePins();
+
   Serial.println();
   Serial.println("I`m alive");
   Serial.println("I`m alive");
@@ -82,23 +134,29 @@ void setup() {
 }
 
 void loop() {
-  lastPressedButton = findPressedButton();
-  if (lastPressedButton != 0) {
-    digitalWrite(PIN_LED, HIGH);
-  }
 
-  delay(DEBOUNCE_MSDELAY);
-  pressedButtonID = findPressedButton();
-  if ((lastPressedButton == pressedButtonID) && (pressedButtonID != 0)) {
-    while (findPressedButton() != 0) {  //wait for button to be released
-      sendMessage(1, pressedButtonID);
-      delay(20);
+  EEPROM.begin(EEPROM_SIZE);
+  uint8_t eeprom_val = 0;
+  EEPROM.get(0, eeprom_val);
+  EEPROM.end();
+  if (eeprom_val == 0) {
+    lastPressedButton = findPressedButton();
+    if (lastPressedButton != 0) {
+      digitalWrite(PIN_LED, HIGH);
     }
-    Serial.println("im out");
-    sendMessage(2, pressedButtonID);
+
     delay(DEBOUNCE_MSDELAY);
+    pressedButtonID = findPressedButton();
+    if ((lastPressedButton == pressedButtonID) && (pressedButtonID != 0)) {
+      while (findPressedButton() != 0) {  //wait for button to be released
+        sendMessage(1, pressedButtonID);
+        delay(20);
+      }
+      sendMessage(2, pressedButtonID);
+      delay(DEBOUNCE_MSDELAY);
+    }
+    digitalWrite(PIN_LED, LOW);
   }
-  digitalWrite(PIN_LED, LOW);
   pilotEnterLightSleep();
 }
 
@@ -108,16 +166,6 @@ void hw_wdt_disable(void) {
 
 void hw_wdt_enable(void) {
   *((volatile uint32_t *)0x60000900) |= 1;  // Hardware WDT ON
-}
-
-// Callback when data is sent
-void OnDataSent(uint8_t *mac_addr, uint8_t sendStatus) {
-  Serial.print("Last Packet Send Status: ");
-  if (sendStatus == 0) {
-    Serial.println("Delivery success");
-  } else {
-    Serial.println("Delivery fail");
-  }
 }
 
 void sendAction(uint8_t action_type, uint8_t action_data) {
@@ -214,7 +262,7 @@ void pilotEnterLightSleep(void) {
   ESP.wdtFeed();
   delay(1);
   esp_now_deinit();
-  
+
   //ESP.wdtDisable();  // Software WDT OFF
   yield();
   //hw_wdt_disable();
