@@ -6,7 +6,7 @@
 #include <ESP8266WiFi.h>
 #include <EEPROM.h>
 
-//#define RELEASE
+#define RELEASE
 
 #ifndef RELEASE
 #define DEBUG
@@ -60,11 +60,17 @@ void hw_wdt_disable(void);
 
 // Callback when data is sent
 void OnDataSent(uint8_t *mac_addr, uint8_t sendStatus) {
+#ifdef DEBUG
   Serial.print("Last Packet Send Status: ");
+#endif
   if (sendStatus == 0) {
+#ifdef DEBUG
     Serial.println("Delivery success");
+#endif
   } else {
+#ifdef DEBUG
     Serial.println("Delivery fail");
+#endif
   }
 }
 
@@ -75,7 +81,9 @@ void setup() {
   EEPROM.begin(EEPROM_SIZE);
   WiFi.mode(WIFI_STA);
   if (esp_now_init() != 0) {
+#ifdef DEBUG
     Serial.println("Error initializing ESP-NOW");
+#endif
   }
   esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
   esp_now_register_send_cb(OnDataSent);
@@ -123,10 +131,13 @@ void setup() {
   wifi_fpm_set_sleep_type(LIGHT_SLEEP_T);
   wifi_fpm_open();
 
+#ifdef DEBUG
   Serial.println();
   Serial.println("I`m alive");
   Serial.println("I`m alive");
   Serial.println("I`m alive");
+#endif
+
 #ifdef RELEASE
   Serial.end();
 #endif
@@ -148,9 +159,9 @@ void loop() {
     delay(DEBOUNCE_MSDELAY);
     pressedButtonID = findPressedButton();
     if ((lastPressedButton == pressedButtonID) && (pressedButtonID != 0)) {
-      while (findPressedButton() != 0) {  //wait for button to be released
-        sendMessage(1, pressedButtonID);
-        delay(20);
+      while (findPressedButton() == lastPressedButton) {  //wait for button to be released
+      sendMessage(1, pressedButtonID);
+      delay(200);
       }
       sendMessage(2, pressedButtonID);
       delay(DEBOUNCE_MSDELAY);
@@ -219,8 +230,6 @@ uint8_t sendMessage(uint8_t message_type, uint8_t buttonID) {
       return FOO_ERROR;
       break;
   }
-#ifdef DEBUG
-#endif
   if ((message_type != 0) && (message_data != 0)) {
     sendAction(message_type, message_data);
   }
@@ -267,7 +276,9 @@ void pilotEnterLightSleep(void) {
   yield();
   //hw_wdt_disable();
   yield();
+#ifdef DEBUG
   Serial.flush();  //flushing any outcoming serial data before CPU halts
+#endif
 // actually enter light sleep:
 // the special timeout value of 0xFFFFFFF triggers indefinite
 // light sleep (until any of the GPIO interrupts above is triggered)
@@ -286,7 +297,9 @@ void pilotEnterLightSleep(void) {
   wifi_fpm_set_sleep_type(LIGHT_SLEEP_T);
   wifi_fpm_open();
   if (esp_now_init() != 0) {
+#ifdef DEBUG
     Serial.println("Error initializing ESP-NOW");
+#endif
   }
   esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
   esp_now_register_send_cb(OnDataSent);
